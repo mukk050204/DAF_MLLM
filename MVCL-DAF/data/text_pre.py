@@ -49,7 +49,8 @@ def get_data(args, data_args):
 def get_backbone_feats(args, data_args, examples):
 
     # tokenizer = BertTokenizer.from_pretrained(args.text_backbone, do_lower_case=True) 
-    tokenizer = BertTokenizer.from_pretrained(args.cache_path, do_lower_case=True, local_files_only=True) 
+    # tokenizer = BertTokenizer.from_pretrained(args.cache_path, do_lower_case=True, local_files_only=True)
+    tokenizer = BertTokenizer.from_pretrained('bert-large-uncased', do_lower_case=True, local_files_only=False)
     data_args['label_len'] = args.label_len
     
     features, cons_features, condition_idx, args.max_cons_seq_length = convert_examples_to_features(args, examples, data_args, tokenizer)     

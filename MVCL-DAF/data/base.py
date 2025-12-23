@@ -2,6 +2,7 @@ import os
 import logging
 import csv
 import copy
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -41,17 +42,18 @@ def get_data(args, logger):
     args.label_len = bm['label_len']
     logger.info('In-distribution data preparation...')
     
-    train_data_index, train_label_ids = get_indexes_annotations(args, bm, label_list, os.path.join(data_path, 'train.tsv'), args.data_mode)
+    train_data_index, train_label_ids, train_video_paths = get_indexes_annotations(args, bm, label_list, os.path.join(data_path, 'train.tsv'), args.data_mode)
 
-    dev_data_index, dev_label_ids = get_indexes_annotations(args, bm, label_list, os.path.join(data_path, 'dev.tsv'), args.data_mode)
+    dev_data_index, dev_label_ids, dev_video_paths = get_indexes_annotations(args, bm, label_list, os.path.join(data_path, 'dev.tsv'), args.data_mode)
 
-    test_data_index, test_label_ids = get_indexes_annotations(args, bm, label_list, os.path.join(data_path, 'test.tsv'), args.data_mode)
+    test_data_index, test_label_ids, test_video_paths = get_indexes_annotations(args, bm, label_list, os.path.join(data_path, 'test.tsv'), args.data_mode)
 
     args.num_train_examples = len(train_data_index) 
     
     data_args = {
         'data_path': data_path,
         'train_data_index': train_data_index,
+        'train_video_paths': train_video_paths,  # 新增
         'dev_data_index': dev_data_index,
         'test_data_index': test_data_index,
         'bm': bm,
@@ -61,7 +63,7 @@ def get_data(args, logger):
     text_data, cons_text_feats, condition_idx = get_t_data(args, data_args)
     
     
-    video_feats_path = os.path.join(data_path, 'video_feats.pkl')
+    video_feats_path = os.path.join(data_path, 'video_data','video_feats.pkl')
     video_feats_data_args = {
         'data_path': video_feats_path,
         'train_data_index': train_data_index,
@@ -72,7 +74,7 @@ def get_data(args, logger):
     
     video_feats_data = get_v_a_data(video_feats_data_args, video_feats_path)
 
-    audio_feats_path = os.path.join(data_path, 'audio_feats.pkl')
+    audio_feats_path = os.path.join(data_path, 'audio_data','audio_feats.pkl')
     audio_feats_data_args = {
         'data_path': audio_feats_path,
         'train_data_index': train_data_index,
@@ -84,9 +86,9 @@ def get_data(args, logger):
     audio_feats_data = get_v_a_data(audio_feats_data_args, audio_feats_path)
     
 
-    train_data = MMDataset(train_label_ids, text_data['train'], video_feats_data['train'], audio_feats_data['train'], cons_text_feats['train'], condition_idx['train'])
-    dev_data = MMDataset(dev_label_ids, text_data['dev'], video_feats_data['dev'], audio_feats_data['dev'], cons_text_feats['dev'], condition_idx['dev']) 
-    test_data = MMDataset(test_label_ids, text_data['test'], video_feats_data['test'], audio_feats_data['test'], cons_text_feats['test'], condition_idx['test'])
+    train_data = MMDataset(train_label_ids, text_data['train'], video_feats_data['train'], audio_feats_data['train'], cons_text_feats['train'], condition_idx['train'], data_args['train_video_paths'])
+    dev_data = MMDataset(dev_label_ids, text_data['dev'], video_feats_data['dev'], audio_feats_data['dev'], cons_text_feats['dev'], condition_idx['dev'], data_args['dev_video_paths'])
+    test_data = MMDataset(test_label_ids, text_data['test'], video_feats_data['test'], audio_feats_data['test'], cons_text_feats['test'], condition_idx['test'], data_args['test_video_paths'])
 
     data = {'train': train_data, 'dev': dev_data, 'test': test_data}     
     
@@ -134,18 +136,41 @@ def get_indexes_annotations(args, bm, label_list, read_file_path, data_mode):
             
             label_ids.append(label_id)
 
+    indexes = []
+    label_ids = []
+    video_paths = []  # 新增：存储完整MP4路径
+
+    for i, line in enumerate(data):
+        if i == 0:
+            continue
+
+        if args.dataset in ['MIntRec', 'MIntRec2']:
+            # 假设TSV列：season, episode, clip, ..., label
+            season, episode, clip = line[0], line[1], line[2]  # 调整列索引
+            index = '_'.join([season, episode, clip])
+            indexes.append(index)
+            video_path = os.path.join(args.video_base_path,
+                                      f"{args.dataset}_{season}_{episode}_{clip}.mp4")  # e.g., MIntRec_S04_E01_29.mp4
+            if not os.path.exists(video_path):
+                logger.warning(f"Video path not found: {video_path}")
+            video_paths.append(video_path)
+            label_id = label_map[line[4]]  # 调整列
+
     
-    return indexes, label_ids
+    return indexes, label_ids, video_paths
 
 def get_labels_weight(args, benchmarks):
     bm = benchmarks[args.dataset]
 
     label_weight = bm['labels_weight']
+    #为样本大的标签分配小权重
     weights = {label: 1.0 / weight for label, weight in label_weight.items()}
+    #将权重归一化
     total = sum(weights.values())
     normalized_weights = {label: weight / total for label, weight in weights.items()}
 
     labels_map = bm['labels_map']
+    #按labels_map的索引顺序从normalized_weights[label]中提取权重值
     weight_tensor = torch.tensor([normalized_weights[label] for label in sorted(labels_map, key=labels_map.get)])
 
     return weight_tensor

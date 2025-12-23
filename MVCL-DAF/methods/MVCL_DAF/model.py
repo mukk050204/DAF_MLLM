@@ -12,6 +12,7 @@ from .SubNets.transformers_encoder.transformer import TransformerEncoder
 from .SubNets.dynamicfc import DynamicLayer
 from .AlignNets import AlignSubNet
 from .PeepholeLSTM import BiPeepholeLSTMLayer
+from .MultimodalLLM_Enhancer import MultimodalLLM_Enhancer
 
 
 
@@ -67,6 +68,7 @@ class DAF(nn.Module):
             num_layers=6
             )
 
+        #动态神经网络结构，参数：输入维度、输出维度、最大深度
         self.visual_dyn = DynamicLayer(video_feat_dim + text_feat_dim, text_feat_dim, max_depth=args.max_depth) 
         self.acoustic_dyn = DynamicLayer(audio_feat_dim + text_feat_dim, text_feat_dim, max_depth=args.max_depth)
 
@@ -93,12 +95,17 @@ class DAF(nn.Module):
     def forward(self, text_embedding, visual, acoustic):
         eps = 1e-6
 
+        #根据extra_encoder选择是高级融合还是基础融合
         if self.extra_encoder:
             visual_text_pair = self.visual_attn(torch.cat((visual, text_embedding), dim=-1))
             acoustic_text_pair = self.acoustic_attn(torch.cat((acoustic, text_embedding), dim=-1))
         else:
             visual_text_pair = torch.cat((visual, text_embedding), dim=-1)
             acoustic_text_pair = torch.cat((acoustic, text_embedding), dim=-1)
+
+
+        #向量拼接之后输入神经网络
+        #最后一层经PRelu激活函数以实现更灵活的网络表达
         weight_v = F.prelu(self.visual_dyn(visual_text_pair), self.prelu_weight_v)  
         weight_a = F.prelu(self.acoustic_dyn(acoustic_text_pair), self.prelu_weight_a)
 
@@ -106,14 +113,16 @@ class DAF(nn.Module):
         acoustic_transformed = self.acoustic_reshape(acoustic)
 
         # Compute intermediate modality-specific features
+        #计算逐元素加权的视觉与听觉特征
         weighted_v = weight_v * visual_transformed
         weighted_a = weight_a * acoustic_transformed
 
-
+        #输入BiLSTM和重塑多层感知机以计算听觉与视觉模态的整体模态注意力分数
         attn_scores_v = torch.sigmoid(self.attn_v(weighted_v))
         attn_scores_a = torch.sigmoid(self.attn_a(weighted_a))
 
         # Normalize attention scores across modalities
+        #归一化，使得和为1
         total_attn = attn_scores_v + attn_scores_a  + eps 
         attn_scores_v = attn_scores_v / total_attn
         attn_scores_a = attn_scores_a / total_attn
@@ -121,6 +130,7 @@ class DAF(nn.Module):
         weighted_v = attn_scores_v * weighted_v
         weighted_a = attn_scores_a * weighted_a
 
+        #融合输出是动态注意力加权的视觉和听觉特征与完整文本特征的总和
         fusion = weighted_v + weighted_a + text_embedding
 
         # Normalize and apply dropout
@@ -219,6 +229,7 @@ class Anchor(BertPreTrainedModel):
         # and head_mask is converted to shape [num_hidden_layers x batch x num_heads x seq_length x seq_length]
         head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)        
 
+        # 获取BERT的初始嵌入表示
         embedding_output = self.embeddings(
             input_ids=input_ids,
             position_ids=position_ids,
@@ -228,6 +239,7 @@ class Anchor(BertPreTrainedModel):
         )      
         # print('embedding_output.shape', embedding_output.shape)
 
+        #对文本输入进行编码
         encoder_outputs = self.encoder(
             embedding_output,
             attention_mask=extended_attention_mask,
@@ -242,6 +254,7 @@ class Anchor(BertPreTrainedModel):
         )
 
         sequence_output = encoder_outputs[0]
+        # 使用池化层提取整体特征
         pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
 
         if not return_dict:
@@ -263,19 +276,27 @@ class Positive(BertPreTrainedModel):
         self.args = args
         self.config = config
 
+        self.mllm_enhancer = MultimodalLLM_Enhancer(args)  # 新增
+
 
         self.embeddings = BertEmbeddings(config)
         self.encoder = BertEncoder(config)
         self.pooler = BertPooler(config)
 
-        # Visual Encoder 
+        # Visual Encoder
+        #视觉编码器
         self.visual_encoder = nn.TransformerEncoder(
+            #参数：输入视频特征的维度，多头注意力头数，前馈神经网络的隐藏层维度
             nn.TransformerEncoderLayer(d_model=args.video_feat_dim, nhead=8, dim_feedforward=1024),
+            #Transformer编码器层数
             num_layers=6
         )
+        #视觉特征重塑，将视频特征维度对准到文本特征维度
         self.visual_reshape = nn.Linear(args.video_feat_dim, args.text_feat_dim)
 
-        # Acoustic Encoder 
+        # Acoustic Encoder
+        #args.audio_feat_dim//2除法整数运算
+        #这里调用了双向Peephole LSTM用来处理听觉数据
         self.acoustic_encoder = PeepholeLSTMModule(args.audio_feat_dim, args.audio_feat_dim//2, num_layers=1, dropout_rate=0.0)
         self.acoustic_reshape = nn.Linear(args.audio_feat_dim, args.text_feat_dim)
 
@@ -301,18 +322,21 @@ class Positive(BertPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,        
     ):
-        
+
+        # 是否输出注意力权重
         output_attentions = (
             output_attentions
             if output_attentions is not None
             else self.config.output_attentions
         )
+        # 是否返回所有Transformer层的隐藏状态
         output_hidden_states = (
             output_hidden_states
             if output_hidden_states is not None
             else self.config.output_hidden_states
         )
 
+        # 不能同时指定input_ids和inputs_embeds,但也不能都不指定（input_embeds是直接输入嵌入向量的选项，允许绕过模型嵌入层直接提供已经处理好的词向量）
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError(
                 "You cannot specify both input_ids and inputs_embeds at the same time"
@@ -325,6 +349,7 @@ class Positive(BertPreTrainedModel):
             raise ValueError(
                 "You have to specify either input_ids or inputs_embeds")
 
+        # 设置设备和默认掩码
         device = input_ids.device if input_ids is not None else inputs_embeds.device
         if attention_mask is None:
             attention_mask = torch.ones(input_shape, device=device)
@@ -334,6 +359,7 @@ class Positive(BertPreTrainedModel):
 
         # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
         # ourselves in which case we just need to make it broadcastable to all heads.
+        # 扩展注意力掩码以适应多头注意力
         extended_attention_mask: torch.Tensor = self.get_extended_attention_mask(
             attention_mask, input_shape, device
         )
@@ -362,10 +388,12 @@ class Positive(BertPreTrainedModel):
         # attention_probs has shape bsz x n_heads x N x N
         # input head_mask has shape [num_heads] or [num_hidden_layers x num_heads]
         # and head_mask is converted to shape [num_hidden_layers x batch x num_heads x seq_length x seq_length]
+        # 用于控制Transformer哪些注意力头被激活
         head_mask = self.get_head_mask(
             head_mask, self.config.num_hidden_layers)
         
         # get embeddings of normal samples
+        # 获取BERT的初始嵌入表示
         embedding_output = self.embeddings(
             input_ids=input_ids,
             position_ids=position_ids,
@@ -373,10 +401,12 @@ class Positive(BertPreTrainedModel):
             inputs_embeds=inputs_embeds,
         )
 
+        #这里是将文本数据、音频数据和视频数据三者模态对齐
         text_embedding, visual, acoustic  = self.alignNet(embedding_output, visual, acoustic)
 
 
         # text_encoder
+        #使用bert编码器对文本输入进行编码
         encoder_outputs = self.encoder(
             text_embedding,
             attention_mask=extended_attention_mask,
@@ -395,13 +425,19 @@ class Positive(BertPreTrainedModel):
         visual_feat = self.visual_encoder(visual)
         visual_view = self.visual_reshape(visual_feat)
 
+        # 新增: MLLM增强 (假设video_frames从输入传入)
+        visual_feat_enhanced, _ = self.mllm_enhancer(visual_feat, None, video_frames)  # 只增强视觉
+        visual_feat = visual_feat_enhanced  # 替换或融合
+
 
         # Acoustic Encoder
         acoustic_feat = self.acoustic_encoder(acoustic)
         acoustic_view = self.acoustic_reshape(acoustic_feat)
 
+        #动态注意力分配操作
         fused_embedding = self.DAF(text_feat, visual_feat, acoustic_feat)
 
+        #使用池化层提取整体特征
         pooled_output = self.pooler(fused_embedding)
 
         return fused_embedding, pooled_output, text_view, visual_view, acoustic_view
@@ -434,6 +470,8 @@ class Positive_Model(BertPreTrainedModel):
     ):
         input_ids, attention_mask, token_type_ids = text[:, 0], text[:, 1], text[:, 2]
 
+        #调用Positive模块
+        #融合输出、池化输出、处理后的文本、视频、音频特征
         outputs, pooled, text_view, visual_view, acoustic_view \
             = self.bert(
             input_ids,
@@ -450,6 +488,7 @@ class Positive_Model(BertPreTrainedModel):
         )
 
 
+        #从张量中提取特定位置的向量并重新组合（提示部分）
         text_condition_tuple = tuple(text_view[torch.arange(text_view.shape[0]), condition_idx.view(-1) + i, :].unsqueeze(1) for i in range(self.label_len))
         text_condition = torch.cat(text_condition_tuple, dim=1)
 
@@ -485,7 +524,9 @@ class MVCL_DAF(nn.Module):
         video_feats,
         audio_feats,
         cons_text_feats,
-        condition_idx
+        condition_idx,
+        video_frames=None,
+        audio_files=None,
     ):
         video_feats = video_feats.float()
         audio_feats = audio_feats.float() 
@@ -495,7 +536,9 @@ class MVCL_DAF(nn.Module):
             text = text_feats,
             visual = video_feats,
             acoustic = audio_feats,
-            condition_idx=condition_idx, 
+            condition_idx=condition_idx,
+            video_frames=video_frames,
+            audio_files=audio_files
         )
 
         outputs = outputs_map 
@@ -508,8 +551,10 @@ class MVCL_DAF(nn.Module):
             token_type_ids = cons_segment_ids, 
             attention_mask = cons_input_mask
         )
+        # 从序列输出中提取特定位置的隐藏状态
         last_hidden_state = cons_outputs.last_hidden_state
 
+        #获取提示部分的特定向量并重新组合
         cons_condition_tuple = tuple(last_hidden_state[torch.arange(last_hidden_state.shape[0]), condition_idx.view(-1) + i, :].unsqueeze(1) for i in range(self.label_len))
         cons_condition = torch.cat(cons_condition_tuple, dim=1)
 

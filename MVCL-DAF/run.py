@@ -16,6 +16,10 @@ import copy
 def parse_arguments():
 
     parser = argparse.ArgumentParser()
+
+    parser.add_argument('--use_mllm', action='store_true', help="Enable MLLM enhancement")
+
+    parser.add_argument('--mllm_model', type=str, default='Qwen/Qwen2.5-VL-7B-Instruct', help="MLLM model name")
     
     parser.add_argument('--logger_name', type=str, default='Multimodal Intent Recognition', help="Logger name for multimodal intent recognition.")
 
@@ -110,7 +114,8 @@ def set_up(args):
 def work(args, data, logger, labels_weight, debug_args=None, ind_args = None):
     
     set_torch_seed(args.seed)
-    
+
+    #methoc_map中定义的是：'mvcl_daf': MVCL_DAF_manager
     method_manager = method_map[args.method]
     method = method_manager(args, data, labels_weight=labels_weight)
         
