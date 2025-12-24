@@ -275,8 +275,7 @@ class Positive(BertPreTrainedModel):
         super().__init__(config)
         self.args = args
         self.config = config
-
-        self.mllm_enhancer = MultimodalLLM_Enhancer(args)  # 新增
+        self.mllm_enhancer = MultimodalLLM_Enhancer(args) if getattr(args, 'use_mllm', False) else None
 
 
         self.embeddings = BertEmbeddings(config)
@@ -312,6 +311,8 @@ class Positive(BertPreTrainedModel):
         visual,
         acoustic,
         condition_idx,
+        video_paths=None,
+        audio_paths=None,
         attention_mask=None,
         token_type_ids=None,
         position_ids=None,
@@ -425,14 +426,12 @@ class Positive(BertPreTrainedModel):
         visual_feat = self.visual_encoder(visual)
         visual_view = self.visual_reshape(visual_feat)
 
-        # 新增: MLLM增强 (假设video_frames从输入传入)
-        visual_feat_enhanced, _ = self.mllm_enhancer(visual_feat, None, video_frames)  # 只增强视觉
-        visual_feat = visual_feat_enhanced  # 替换或融合
-
-
         # Acoustic Encoder
         acoustic_feat = self.acoustic_encoder(acoustic)
         acoustic_view = self.acoustic_reshape(acoustic_feat)
+
+        if self.mllm_enhancer and video_paths:
+            visual_feat, acoustic_feat = self.mllm_enhancer(visual_feat, acoustic_feat, video_paths, audio_paths)
 
         #动态注意力分配操作
         fused_embedding = self.DAF(text_feat, visual_feat, acoustic_feat)

@@ -94,15 +94,14 @@ class MVCL_DAF_manager:
                 video_feats = batch['video_feats'].to(self.device)
                 audio_feats = batch['audio_feats'].to(self.device)
                 label_ids = batch['label_ids'].to(self.device)
-                video_frames = batch['video_frames']  # 假设dataloader添加了此字段
-                audio_files = batch['audio_files']  # 可选
+                video_paths = batch.get('video_paths', None)  # 健壮获取
 
 
 
                 with torch.set_grad_enabled(True):
 
                     #这里因为是每个模态分开计算再融合，所以全部返回了
-                    logits, _, condition, cons_condition, text_condition, visual_condition, acoustic_condition = self.model(text_feats, video_feats, audio_feats, cons_text_feats, condition_idx,video_frames=video_frames, audio_files=audio_files)
+                    logits, _, condition, cons_condition, text_condition, visual_condition, acoustic_condition = self.model(text_feats, video_feats, audio_feats, cons_text_feats, condition_idx,video_paths=video_paths)
                     # 构建对比学习特征对
                     cons_feature = torch.cat((condition.unsqueeze(1), cons_condition.unsqueeze(1)), dim=1)
                     text_feature = torch.cat((text_condition.unsqueeze(1), cons_condition.unsqueeze(1)), dim=1)
@@ -168,7 +167,7 @@ class MVCL_DAF_manager:
                 self.best_eval_score = eval_score
                 #重置五改善计数
                 no_improve_epochs = 0  # Reset no improve count
-                save_path = '/home/freyr/MVCL-DAF/methods/MVCL_DAF/Models'
+                save_path = args.model_output_path
                 torch.save(self.model.state_dict(), os.path.join(save_path, 'best_model.pth'))
                 self.logger.info('The Best Model is Saved')
             else:
@@ -219,10 +218,11 @@ class MVCL_DAF_manager:
             video_feats = batch['video_feats'].to(self.device)
             audio_feats = batch['audio_feats'].to(self.device)
             label_ids = batch['label_ids'].to(self.device)
+            video_paths = batch.get('video_paths', None)  # 健壮获取
 
             with torch.set_grad_enabled(False):
                 logits, features, condition, cons_condition, text_condition, visual_condition, acoustic_condition \
-                    = self.model(text_feats, video_feats, audio_feats, cons_text_feats, condition_idx)
+                    = self.model(text_feats, video_feats, audio_feats, cons_text_feats, condition_idx,video_paths=video_paths)
                 total_logits = torch.cat((total_logits, logits))
                 total_labels = torch.cat((total_labels, label_ids))
                 total_features = torch.cat((total_features, features))

@@ -112,6 +112,7 @@ def get_indexes_annotations(args, bm, label_list, read_file_path, data_mode):
         data = csv.reader(f, delimiter="\t")
         indexes = []
         label_ids = []
+        video_paths = []  # 新增：存储完整MP4路径
 
         for i, line in enumerate(data):
             if i == 0:
@@ -120,7 +121,10 @@ def get_indexes_annotations(args, bm, label_list, read_file_path, data_mode):
             if args.dataset in ['MIntRec']:  
                 index = '_'.join([line[0], line[1], line[2]])
                 indexes.append(index)
+                video_path = os.path.join(args.video_base_path, f"{args.dataset}_{line[0]}_{line[1]}_{line[2]}.mp4")
+                video_paths.append(video_path)
                 label_id = label_map[line[4]]
+
 
             elif args.dataset in ['MELD']:
                 index = '_'.join([line[0], line[1]])
@@ -131,30 +135,9 @@ def get_indexes_annotations(args, bm, label_list, read_file_path, data_mode):
             elif args.dataset in ['MIntRec2']:
                 index = 'dia{}_utt{}'.format(line[0], line[1])
                 indexes.append(index)
-                
                 label_id = label_map[line[3]]
             
             label_ids.append(label_id)
-
-    indexes = []
-    label_ids = []
-    video_paths = []  # 新增：存储完整MP4路径
-
-    for i, line in enumerate(data):
-        if i == 0:
-            continue
-
-        if args.dataset in ['MIntRec', 'MIntRec2']:
-            # 假设TSV列：season, episode, clip, ..., label
-            season, episode, clip = line[0], line[1], line[2]  # 调整列索引
-            index = '_'.join([season, episode, clip])
-            indexes.append(index)
-            video_path = os.path.join(args.video_base_path,
-                                      f"{args.dataset}_{season}_{episode}_{clip}.mp4")  # e.g., MIntRec_S04_E01_29.mp4
-            if not os.path.exists(video_path):
-                logger.warning(f"Video path not found: {video_path}")
-            video_paths.append(video_path)
-            label_id = label_map[line[4]]  # 调整列
 
     
     return indexes, label_ids, video_paths

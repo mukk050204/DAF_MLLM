@@ -16,9 +16,9 @@ import copy
 def parse_arguments():
 
     parser = argparse.ArgumentParser()
-
+    parser.add_argument('--mllm_local_path', type=str, default='/path/to/your/Qwen2.5-VL-7B-Instruct',
+                        help='本地MLLM模型路径（如果已下载）')
     parser.add_argument('--use_mllm', action='store_true', help="Enable MLLM enhancement")
-
     parser.add_argument('--mllm_model', type=str, default='Qwen/Qwen2.5-VL-7B-Instruct', help="MLLM model name")
     
     parser.add_argument('--logger_name', type=str, default='Multimodal Intent Recognition', help="Logger name for multimodal intent recognition.")
