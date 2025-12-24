@@ -17,7 +17,15 @@ class MMDataset(Dataset):
         self.video_feats = video_feats
         self.audio_feats = audio_feats
         self.size = len(self.text_feats)
-        self.video_paths = video_paths if video_paths else []  # 列表 of str
+        if video_paths is not None:
+            self.video_paths = video_paths
+        else:
+            self.video_paths = [None] * self.size  # 确保长度一致
+
+            # 验证长度一致性
+        if len(self.video_paths) != self.size:
+            raise ValueError(f"video_paths长度({len(self.video_paths)})与样本数({self.size})不匹配")
+        # self.video_paths = video_paths if video_paths else []  # 列表 of str
 
     def __len__(self):
         return self.size

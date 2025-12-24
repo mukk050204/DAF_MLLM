@@ -94,7 +94,11 @@ class MVCL_DAF_manager:
                 video_feats = batch['video_feats'].to(self.device)
                 audio_feats = batch['audio_feats'].to(self.device)
                 label_ids = batch['label_ids'].to(self.device)
-                video_paths = batch.get('video_paths', None)  # 健壮获取
+                # video_paths = batch.get('video_paths', None)  # 健壮获取
+                if self.args.use_mllm and video_paths is None:
+                    self.logger.warning(f"use_mllm=True but no video_paths provided in batch {step}")
+                    # 可能需要设置默认值或跳过增强
+                    video_paths = [None] * len(text_feats) if isinstance(text_feats, torch.Tensor) else None
 
 
 
@@ -218,7 +222,11 @@ class MVCL_DAF_manager:
             video_feats = batch['video_feats'].to(self.device)
             audio_feats = batch['audio_feats'].to(self.device)
             label_ids = batch['label_ids'].to(self.device)
-            video_paths = batch.get('video_paths', None)  # 健壮获取
+            # video_paths = batch.get('video_paths', None)  # 健壮获取
+            if self.args.use_mllm and video_paths is None:
+                self.logger.warning(f"use_mllm=True but no video_paths provided in batch {step}")
+                # 可能需要设置默认值或跳过增强
+                video_paths = [None] * len(text_feats) if isinstance(text_feats, torch.Tensor) else None
 
             with torch.set_grad_enabled(False):
                 logits, features, condition, cons_condition, text_condition, visual_condition, acoustic_condition \

@@ -275,8 +275,12 @@ class Positive(BertPreTrainedModel):
         super().__init__(config)
         self.args = args
         self.config = config
-        self.mllm_enhancer = MultimodalLLM_Enhancer(args) if getattr(args, 'use_mllm', False) else None
-
+        # self.mllm_enhancer = MultimodalLLM_Enhancer(args) if getattr(args, 'use_mllm', False) else None
+        if getattr(args, 'use_mllm', False):
+            device = args.device if hasattr(args, 'device') else 'cuda'
+            self.mllm_enhancer = MultimodalLLM_Enhancer(args, device=device)
+        else:
+            self.mllm_enhancer = None
 
         self.embeddings = BertEmbeddings(config)
         self.encoder = BertEncoder(config)
@@ -460,6 +464,8 @@ class Positive_Model(BertPreTrainedModel):
         visual,
         acoustic,
         condition_idx,
+        video_paths=None,  # 添加
+        audio_paths=None,  # 添加
         position_ids=None,
         head_mask=None,
         inputs_embeds=None,
@@ -477,6 +483,8 @@ class Positive_Model(BertPreTrainedModel):
             visual,
             acoustic,
             condition_idx,
+            video_paths=video_paths,  # 确保传递
+            audio_paths=audio_paths,  # 确保传递
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             position_ids=position_ids,
@@ -524,8 +532,8 @@ class MVCL_DAF(nn.Module):
         audio_feats,
         cons_text_feats,
         condition_idx,
-        video_frames=None,
-        audio_files=None,
+        video_paths=None,
+        audio_paths=None,
     ):
         video_feats = video_feats.float()
         audio_feats = audio_feats.float() 
@@ -536,8 +544,8 @@ class MVCL_DAF(nn.Module):
             visual = video_feats,
             acoustic = audio_feats,
             condition_idx=condition_idx,
-            video_frames=video_frames,
-            audio_files=audio_files
+            video_paths=video_paths,
+            audio_paths=audio_paths,
         )
 
         outputs = outputs_map 

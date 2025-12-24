@@ -129,7 +129,7 @@ def get_indexes_annotations(args, bm, label_list, read_file_path, data_mode):
             elif args.dataset in ['MELD']:
                 index = '_'.join([line[0], line[1]])
                 indexes.append(index)
-                
+
                 label_id = label_map[bm['label_maps'][line[3]]]
 
             elif args.dataset in ['MIntRec2']:

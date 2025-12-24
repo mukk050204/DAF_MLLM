@@ -39,7 +39,6 @@ class Param():
             'dropout_prob': [0.5],
             'output_droupout_prob':[0.0], 
             'extra_encoder': False,
-            'use_mllm': [True],  # 是否启用MLLM增强
             'mllm_model': ['Qwen/Qwen2.5-VL-7B-Instruct'],  # MLLM模型名
             'video_base_path': 'C:/Users/zwh/Desktop/基于对比学习的多模态意图理解研究/MVCL-DAF/MVCL-DAF/video',  # 视频MP4基路径（用户需替换）
             'num_video_frames': [3],  # 每视频采样帧数
